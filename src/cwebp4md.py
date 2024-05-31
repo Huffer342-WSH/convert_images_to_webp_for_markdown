@@ -19,84 +19,70 @@ def find_md_files_in_directory(directory, recursive=False):
 
 
 def find_local_images(md_content):
-    # 使用正则表达式找到所有图片路径
-    pattern = r"!\[.*?\]\((.*?)\)"
+
+    # 使用正则表达式找到所有图片路径，并排除 http 和 .webp
+    pattern = r"((?<!<!-- )!\[(.*?)\]\((?!http[s]?:)(?!.*\.webp\))(.*?)\))"
     all_images = re.findall(pattern, md_content)
-
-    # 过滤出本地图片路径
-    local_images = [img for img in all_images if not img.startswith(("http://", "https://"))]
-
-    return local_images
+    return all_images
 
 
-def convert_image_to_webp(image_path, quality=80):
+def convert_image_to_webp(image_path, md_file, quality=80):
+
+    if not os.path.isabs(image_path):
+        # 获取图片的绝对路径
+        abs_image_path = os.path.join(os.path.dirname(md_file), image_path)
+    else:
+        abs_image_path = image_path
+    # 检查图片是否存在
+    abs_image_path = os.path.normpath(abs_image_path)
+
+    if not os.path.exists(abs_image_path):
+        print(f"Warning: Image '{abs_image_path}' not found. Skipping...")
+        return False
+
     # 获取文件路径、文件名和扩展名
-    dirname = os.path.dirname(image_path)
-    basename = os.path.basename(image_path)
+    dirname = os.path.dirname(abs_image_path)
+    basename = os.path.basename(abs_image_path)
     filename, ext = os.path.splitext(basename)
     output_path = os.path.join(dirname, f"{filename}.webp")
+    output_path = os.path.normpath(output_path)
 
-    # 判断是否是GIF动图
-    if ext.lower() == ".webp":
-        pass
-    elif ext.lower() == ".gif":
-        with Image.open(image_path) as img:
-            frames = [frame.copy() for frame in ImageSequence.Iterator(img)]
-            frames[0].save(
-                output_path, format="WEBP", save_all=True, append_images=frames[1:], loop=0, duration=img.info["duration"], quality=quality, method=6
-            )
-    else:
-        with Image.open(image_path) as img:
-            img.save(output_path, "WEBP", quality=quality, method=6)
+    # 判断webp是否已经存在
+    if ext.lower() != ".webp" and not os.path.exists(output_path):
+        if ext.lower() == ".gif":
+            with Image.open(abs_image_path) as img:
+                frames = [frame.copy() for frame in ImageSequence.Iterator(img)]
+                frames[0].save(
+                    output_path, format="WEBP", save_all=True, append_images=frames[1:], loop=0, duration=img.info["duration"], quality=quality, method=6
+                )
+        else:
+            with Image.open(abs_image_path) as img:
+                img.save(output_path, "WEBP", quality=quality, method=6)
+        print(f"  Converted '{abs_image_path}' ---> '{output_path}'")
 
+    # 获取新的相对路径，并保留 ./ 前缀
+    output_path = os.path.relpath(output_path, os.path.dirname(md_file))
+    output_path = os.path.normpath(output_path)
+    output_path = output_path.replace("\\", "/")
+    if not output_path.startswith("./"):
+        output_path = "./" + output_path
     return output_path
-
-
-def update_md_content(md_content, image_paths, updated_paths):
-    for original, updated in zip(image_paths, updated_paths):
-        md_content = md_content.replace(original, updated)
-    return md_content
 
 
 def process_markdown(md_file):
     with open(md_file, "r", encoding="utf-8") as file:
         md_content = file.read()
 
-    image_paths = find_local_images(md_content)
-    updated_paths = []
+    all_images = find_local_images(md_content)
+    # print(all_images)
 
-    for image_path in image_paths:
-        if not os.path.isabs(image_path):
-            # 获取图片的绝对路径
-            abs_image_path = os.path.join(os.path.dirname(md_file), image_path)
-        else:
-            abs_image_path = image_path
-
-        # 检查图片是否存在
-        if not os.path.exists(abs_image_path):
-            print(f"Warning: Image '{abs_image_path}' not found. Skipping...")
-            continue
-
-        # 转换图片并获取新的路径
-        new_image_path = convert_image_to_webp(abs_image_path)
-
-        # 获取新的相对路径，并保留 ./ 前缀
-        rel_new_image_path = os.path.relpath(new_image_path, os.path.dirname(md_file))
-        rel_new_image_path = os.path.normpath(rel_new_image_path)
-
-        rel_new_image_path = rel_new_image_path.replace("\\", "/")
-
-        if not rel_new_image_path.startswith("./"):
-            rel_new_image_path = "./" + rel_new_image_path
-        if rel_new_image_path != image_path:
-            print(f"  Converted '{image_path}' to '{rel_new_image_path}'")
-        updated_paths.append(rel_new_image_path)
-
-    new_md_content = update_md_content(md_content, image_paths, updated_paths)
+    for full_match, alt_text, image_path in all_images:
+        new_image_path = convert_image_to_webp(image_path, md_file)
+        md_content = md_content.replace(full_match, f"<!-- {full_match} -->\n![{alt_text}]({new_image_path})")
 
     # 写回Markdown文件
     with open(md_file, "w", encoding="utf-8") as file:
-        file.write(new_md_content)
+        file.write(md_content)
 
 
 def process_markdown_file(md_file, current_directory):
