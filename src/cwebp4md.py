@@ -132,6 +132,7 @@ def print_help():
 
 
 if __name__ == "__main__":
+    multiprocessing.freeze_support()
     if len(sys.argv) < 2 or "-h" in sys.argv or "--help" in sys.argv:
         print_help()
         sys.exit(0)

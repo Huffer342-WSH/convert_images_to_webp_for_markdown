@@ -36,3 +36,5 @@ cp -r ./bak/* ./test
 python ../src/cwebp4md.py ./test/test.md -d ./test/d/ -r ./test/r/
 
 ```
+
+## pyinstaller 打包
