@@ -21,7 +21,7 @@ def find_md_files_in_directory(directory, recursive=False):
 def find_local_images(md_content):
 
     # 使用正则表达式找到所有图片路径，并排除 http 和 .webp
-    pattern = r"((?<!<!-- )!\[(.*?)\]\((?!http[s]?:)(?!.*\.webp\))(.*?)\))"
+    pattern = r"((?<!<!-- )!\[(.*?)\]\((?!http[s]?:)(?!.*\.webp\))(.*?)\))(?!.*-->)"
     all_images = re.findall(pattern, md_content)
     return all_images
 
