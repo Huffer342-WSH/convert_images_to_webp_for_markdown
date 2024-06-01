@@ -1,4 +1,5 @@
 import os
+from os import path, getcwd
 import re
 import sys
 from glob import glob
@@ -12,9 +13,9 @@ def find_md_files(pattern):
 
 def find_md_files_in_directory(directory, recursive=False):
     if recursive:
-        pattern = os.path.join(directory, "**", "*.md")
+        pattern = path.join(directory, "**", "*.md")
     else:
-        pattern = os.path.join(directory, "*.md")
+        pattern = path.join(directory, "*.md")
     return glob(pattern, recursive=recursive)
 
 
@@ -28,27 +29,27 @@ def find_local_images(md_content):
 
 def convert_image_to_webp(image_path, md_file, quality=80):
 
-    if not os.path.isabs(image_path):
+    if not path.isabs(image_path):
         # 获取图片的绝对路径
-        abs_image_path = os.path.join(os.path.dirname(md_file), image_path)
+        abs_image_path = path.join(path.dirname(md_file), image_path)
     else:
         abs_image_path = image_path
     # 检查图片是否存在
-    abs_image_path = os.path.normpath(abs_image_path)
+    abs_image_path = path.normpath(abs_image_path)
 
-    if not os.path.exists(abs_image_path):
-        print(f"Warning: Image '{abs_image_path}' not found. Skipping...")
+    if not path.exists(abs_image_path):
+        print(f"\n[{md_file}]\n  Warning: Image '{abs_image_path}' not found. Skipping...")
         return False
 
     # 获取文件路径、文件名和扩展名
-    dirname = os.path.dirname(abs_image_path)
-    basename = os.path.basename(abs_image_path)
-    filename, ext = os.path.splitext(basename)
-    output_path = os.path.join(dirname, f"{filename}.webp")
-    output_path = os.path.normpath(output_path)
+    dirname = path.dirname(abs_image_path)
+    basename = path.basename(abs_image_path)
+    filename, ext = path.splitext(basename)
+    output_path = path.join(dirname, f"{filename}.webp")
+    output_path = path.normpath(output_path)
 
     # 判断webp是否已经存在
-    if ext.lower() != ".webp" and not os.path.exists(output_path):
+    if ext.lower() != ".webp" and not path.exists(output_path):
         if ext.lower() == ".gif":
             with Image.open(abs_image_path) as img:
                 frames = [frame.copy() for frame in ImageSequence.Iterator(img)]
@@ -58,11 +59,11 @@ def convert_image_to_webp(image_path, md_file, quality=80):
         else:
             with Image.open(abs_image_path) as img:
                 img.save(output_path, "WEBP", quality=quality, method=6)
-        print(f"  Converted '{abs_image_path}' ---> '{output_path}'")
+        print(f"\n[{md_file}]\n  Converted '{abs_image_path}' ---> '{output_path}'")
 
     # 获取新的相对路径，并保留 ./ 前缀
-    output_path = os.path.relpath(output_path, os.path.dirname(md_file))
-    output_path = os.path.normpath(output_path)
+    output_path = path.relpath(output_path, path.dirname(md_file))
+    output_path = path.normpath(output_path)
     output_path = output_path.replace("\\", "/")
     if not output_path.startswith("./"):
         output_path = "./" + output_path
@@ -70,31 +71,69 @@ def convert_image_to_webp(image_path, md_file, quality=80):
 
 
 def process_markdown(md_file):
+    def replace_image(match):
+        full_match, alt_text, image_path = match.groups()
+        new_image_path = convert_image_to_webp(image_path, md_file)
+        if new_image_path == False:
+            return full_match
+        return f"<!-- {full_match} --> ![{alt_text}]({new_image_path})"
+
+    # 定义一个函数，用于分割文本为多个段落，标记每个段落是文本还是代码
+    def split_text(md_content):
+        segments = re.split(r"(```.*?```)", md_content, flags=re.DOTALL)
+        segmented_content = []
+        for i, segment in enumerate(segments):
+            if i % 2 == 0:
+                # 文本段
+                segmented_content.append(("text", segment))
+            else:
+                # 代码段
+                segmented_content.append(("code", segment))
+        return segmented_content
+
     with open(md_file, "r", encoding="utf-8") as file:
         md_content = file.read()
 
-    all_images = find_local_images(md_content)
-    # print(all_images)
+    # 分割文本为多个段落，标记每个段落是文本还是代码
+    segmented_content = split_text(md_content)
 
-    for full_match, alt_text, image_path in all_images:
-        new_image_path = convert_image_to_webp(image_path, md_file)
-        md_content = md_content.replace(full_match, f"<!-- {full_match} -->\n![{alt_text}]({new_image_path})")
+    # print("===========================================================")
+    # for i in range(len(segmented_content)):
+    #     print(segmented_content[i])
+    #     print("===========================================================")
+
+    pattern = r"((?<!<!-- )!\[(.*?)\]\((?!http[s]?:)(?!.*\.webp\))(.*?)\))(?!.*-->)"
+    # 对文本段中的图片引用进行替换
+    for i, (segment_type, segment) in enumerate(segmented_content):
+        if segment_type == "text":
+            segmented_content[i] = (
+                "text",
+                re.sub(r"((?<!<!-- )!\[(.*?)\]\((?!http[s]?:)(?!.*\.webp\))(.*?)\))(?!.*-->)", replace_image, segment),
+            )
+
+    # print("\n\n===========================================================")
+    # for i in range(len(segmented_content)):
+    #     print(segmented_content[i])
+    #     print("===========================================================")
+    # 重新拼接文本段和代码段
+    processed_md_content = "".join(segment for _, segment in segmented_content)
+    # print(f"\n{processed_md_content}")
 
     # 写回Markdown文件
     with open(md_file, "w", encoding="utf-8") as file:
-        file.write(md_content)
+        file.write(processed_md_content)
 
 
 def process_markdown_file(md_file, current_directory):
     print(f"Processing '{md_file}'...")
     # 判断路径是否是绝对路径
-    if os.path.isabs(md_file):
+    if path.isabs(md_file):
         pass
     else:
         # 如果是相对路径，则将其与当前工作目录拼接
-        md_file = os.path.join(current_directory, md_file)
+        md_file = path.join(current_directory, md_file)
 
-    if not os.path.isfile(md_file):
+    if not path.isfile(md_file):
         print(f"Warning: File '{md_file}' not found. Skipping...")
         return
 
@@ -150,7 +189,10 @@ if __name__ == "__main__":
     for directory, recursive in directories:
         md_files.extend(find_md_files_in_directory(directory, recursive))
 
-    print("找到的 .md 文件：", md_files)
+    print("待处理 .md 文件数量：", len(md_files))
+    for i in range(len(md_files)):
+        md_files[i] = path.normpath(md_files[i])
+        print(f"{i+1}. {md_files[i]}")
 
     if not md_files:
         print(f"Error: No files matched the pattern '{input_patterns}'")
