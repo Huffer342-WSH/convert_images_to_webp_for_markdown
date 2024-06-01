@@ -1,0 +1,3 @@
+![jpg](../assets/jpg.jpg)
+![gif](../assets/gif.gif)
+![png](../assets/png.png)
