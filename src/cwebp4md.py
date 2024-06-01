@@ -27,18 +27,18 @@ def find_local_images(md_content):
     return all_images
 
 
-def convert_image_to_webp(image_path, md_file, quality=80):
+def convert_image_to_webp(image_path, markdown_path, quality=80):
 
     if not path.isabs(image_path):
         # 获取图片的绝对路径
-        abs_image_path = path.join(path.dirname(md_file), image_path)
+        abs_image_path = path.join(path.dirname(markdown_path), image_path)
     else:
         abs_image_path = image_path
     # 检查图片是否存在
     abs_image_path = path.normpath(abs_image_path)
 
     if not path.exists(abs_image_path):
-        print(f"\n[{md_file}]\n  Warning: Image '{abs_image_path}' not found. Skipping...")
+        print(f"\n[{markdown_path}]\n  Warning: Image '{abs_image_path}' not found. Skipping...")
         return False
 
     # 获取文件路径、文件名和扩展名
@@ -59,10 +59,10 @@ def convert_image_to_webp(image_path, md_file, quality=80):
         else:
             with Image.open(abs_image_path) as img:
                 img.save(output_path, "WEBP", quality=quality, method=6)
-        print(f"\n[{md_file}]\n  Converted '{abs_image_path}' ---> '{output_path}'")
+        print(f"\n[{markdown_path}]\n  Convert '{abs_image_path}' ---> '{output_path}'")
 
     # 获取新的相对路径，并保留 ./ 前缀
-    output_path = path.relpath(output_path, path.dirname(md_file))
+    output_path = path.relpath(output_path, path.dirname(markdown_path))
     output_path = path.normpath(output_path)
     output_path = output_path.replace("\\", "/")
     if not output_path.startswith("./"):
@@ -70,13 +70,16 @@ def convert_image_to_webp(image_path, md_file, quality=80):
     return output_path
 
 
-def process_markdown(md_file):
+def process_markdown(markdown_path, option_replace):
     def replace_image(match):
         full_match, alt_text, image_path = match.groups()
-        new_image_path = convert_image_to_webp(image_path, md_file)
+        new_image_path = convert_image_to_webp(image_path, markdown_path)
         if new_image_path == False:
             return full_match
-        return f"<!-- {full_match} --> ![{alt_text}]({new_image_path})"
+        if option_replace:
+            return f"![{alt_text}]({new_image_path})"
+        else:
+            return f"<!-- {full_match} --> ![{alt_text}]({new_image_path})"
 
     # 定义一个函数，用于分割文本为多个段落，标记每个段落是文本还是代码
     def split_text(md_content):
@@ -91,7 +94,7 @@ def process_markdown(md_file):
                 segmented_content.append(("code", segment))
         return segmented_content
 
-    with open(md_file, "r", encoding="utf-8") as file:
+    with open(markdown_path, "r", encoding="utf-8") as file:
         md_content = file.read()
 
     # 分割文本为多个段落，标记每个段落是文本还是代码
@@ -108,7 +111,7 @@ def process_markdown(md_file):
         if segment_type == "text":
             segmented_content[i] = (
                 "text",
-                re.sub(r"((?<!<!-- )!\[(.*?)\]\((?!http[s]?:)(?!.*\.webp\))(.*?)\))(?!.*-->)", replace_image, segment),
+                re.sub(pattern, replace_image, segment),
             )
 
     # print("\n\n===========================================================")
@@ -120,38 +123,40 @@ def process_markdown(md_file):
     # print(f"\n{processed_md_content}")
 
     # 写回Markdown文件
-    with open(md_file, "w", encoding="utf-8") as file:
+    with open(markdown_path, "w", encoding="utf-8") as file:
         file.write(processed_md_content)
 
 
-def process_markdown_file(md_file, current_directory):
-    print(f"Processing '{md_file}'...")
-    # 判断路径是否是绝对路径
-    if path.isabs(md_file):
-        pass
-    else:
-        # 如果是相对路径，则将其与当前工作目录拼接
-        md_file = path.join(current_directory, md_file)
+def process_markdown_file(markdown_path, option_replace):
+    print(f"Processing '{markdown_path}'...")
 
-    if not path.isfile(md_file):
-        print(f"Warning: File '{md_file}' not found. Skipping...")
+    if not path.isfile(markdown_path):
+        print(f"Warning: File '{markdown_path}' not found. Skipping...")
         return
 
-    process_markdown(md_file)
+    process_markdown(markdown_path, option_replace)
 
 
 def print_help():
     help_message = """
-    Usage: python cwebp4md.py <input_file_pattern> [-r <directory>] [-d <directory>] [-h | --help]
+    Usage: python cwebp4md.py <input_file_pattern> [-r <directory>] [-d <directory>] [--replace] [-h | --help]
 
     Options:
         <input_file_pattern>    Pattern to match markdown files (e.g., "*.md").
         -r <directory>          Specify directory to search for markdown files recursively.
         -d <directory>          Specify directory to search for markdown files non-recursively.
+        --replace               Replace original image links with new ones directly in the markdown files.
+                                By default, the script will comment out the original image links and add new ones.
         -h, --help              Show this help message and exit.
+
+    Description:
+        This script processes markdown files to update image links. By default, it comments out the original image 
+        links and adds new image links in the markdown files. The --replace option allows the script to replace 
+        the original image links directly.
 
     Example:
         python cwebp4md.py "*.md" -r ./docs -d ./notes
+        python cwebp4md.py "*.md" --replace -r ./docs -d ./notes
     """
     print(help_message)
 
@@ -164,7 +169,9 @@ if __name__ == "__main__":
 
     input_patterns = []
     directories = []
+    md_files = []
     recursive_search = False
+    option_replace = False
 
     i = 1
     while i < len(sys.argv):
@@ -174,6 +181,8 @@ if __name__ == "__main__":
         elif sys.argv[i] == "-d" and i + 1 < len(sys.argv):
             directories.append((sys.argv[i + 1], False))
             i += 1
+        elif sys.argv[i] == "--replace":
+            option_replace = True
         else:
             input_patterns.append(sys.argv[i])
         i += 1
@@ -181,26 +190,32 @@ if __name__ == "__main__":
     current_directory = os.getcwd()
     print("工作路径：", current_directory)
 
-    md_files = []
-
     for pattern in input_patterns:
         md_files.extend(find_md_files(pattern))
 
     for directory, recursive in directories:
         md_files.extend(find_md_files_in_directory(directory, recursive))
 
-    print("待处理 .md 文件数量：", len(md_files))
-    for i in range(len(md_files)):
-        md_files[i] = path.normpath(md_files[i])
-        print(f"{i+1}. {md_files[i]}")
-
     if not md_files:
         print(f"Error: No files matched the pattern '{input_patterns}'")
         sys.exit(1)
 
-    # 使用 multiprocessing.Pool 创建一个进程池
-    with multiprocessing.Pool() as pool:
-        # 将 md_files 和 current_directory 作为参数传递给 process_markdown_file 函数
-        pool.starmap(process_markdown_file, [(md_file, current_directory) for md_file in md_files])
+    print("待处理 .md 文件数量：", len(md_files))
+    for i in range(len(md_files)):
+        if not path.isabs(md_files[i]):
+            md_files[i] = path.join(current_directory, md_files[i])
+        md_files[i] = path.normpath(md_files[i])
+        print(f"{i+1}. {md_files[i]}")
+
+    try:
+        with multiprocessing.Pool() as pool:
+            pool.starmap(process_markdown_file, [(markdown_path, option_replace) for markdown_path in md_files])
+    except KeyboardInterrupt:
+        print("Caught KeyboardInterrupt, terminating workers")
+        pool.terminate()
+        pool.join()
+    else:
+        pool.close()
+        pool.join()
 
     print("Markdown files updated successfully.")
