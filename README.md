@@ -19,13 +19,14 @@
 ## 使用方法
 
 ```shell
-python cwebp4md.py <input_file_pattern> [-r <directory>] [-d <directory>] [-h | --help]
+python cwebp4md.py <input_file_pattern> [-r <directory>] [-d <directory>] [--replace] [-h | --help]
 ```
 
 可选的输入参数
 - `-r <directory>`: 递归搜索`<directory>`及其子目录中的.md文件并处理
 - `-d <directory>`: 处理`<directory>`下的.md文件
 - `<file>` ：处理指定文件，支持通配符
+- `--replace`: 替换原链接，而不是默认的注释旧链接在添加新链接
 
 ## 测试
 
